@@ -1,0 +1,27 @@
+{
+  "name": "stock-notification",
+  "version": "1.0.0",
+  "description": "Stock notification system using Cloudflare Workers",
+  "main": "worker/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:prod": "wrangler deploy --env production",
+    "validate": "python3 ci/validate_targets.py config/targets.csv config/schema.json",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "stock-notification",
+    "rss",
+    "line-api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.22.1"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,114 @@
+name: Validate & Deploy Targets
+
+on:
+  pull_request:
+    paths: 
+      - "config/**"
+      - "worker/**"
+      - "wrangler.toml"
+      - "package.json"
+  push:
+    branches: 
+      - "main"
+    paths:
+      - "config/**"
+      - "worker/**"
+      - "wrangler.toml"
+      - "package.json"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Validate CSV
+        run: |
+          python3 ci/validate_targets.py config/targets.csv config/schema.json
+      
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Type check
+        run: npx tsc --noEmit
+
+  deploy-targets-to-kv:
+    if: github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Wrangler
+        run: npm install -g wrangler
+      
+      - name: Convert CSV to JSON
+        run: |
+          python3 - <<'PY'
+          import csv, json, sys
+          rows = []
+          with open('config/targets.csv', 'r', encoding='utf-8') as f:
+              reader = csv.DictReader(f)
+              for row in reader:
+                  # enabledをbooleanに変換
+                  row['enabled'] = row['enabled'].lower() in ['true', '1', 'yes']
+                  rows.append(row)
+          print(json.dumps(rows, ensure_ascii=False, indent=2))
+          PY > targets.json
+      
+      - name: Deploy targets to KV (Development)
+        run: |
+          wrangler kv:key put --binding TARGETS targets:active --path targets.json --preserve
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      
+      - name: Deploy targets to KV (Production)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          wrangler kv:key put --binding TARGETS targets:active --path targets.json --preserve --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-worker:
+    if: github.ref == 'refs/heads/main'
+    needs: [validate, deploy-targets-to-kv]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Deploy Worker (Development)
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      
+      - name: Deploy Worker (Production)
+        run: wrangler deploy --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

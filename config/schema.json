@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "テナントID（顧客識別子）"
+    },
+    "company_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "企業名"
+    },
+    "pr_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "企業PRのRSSフィードURL"
+    },
+    "twitter_id": {
+      "type": "string",
+      "pattern": "^@[a-zA-Z0-9_]+$",
+      "description": "Twitter/XアカウントID（@付き）"
+    },
+    "x_feed_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "XのRSS変換URL（空欄可）"
+    },
+    "line_user_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "LINE通知先のユーザーID"
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "監視の有効/無効"
+    }
+  },
+  "required": ["tenant_id", "company_name", "pr_url", "twitter_id", "line_user_id", "enabled"],
+  "additionalProperties": false
+}

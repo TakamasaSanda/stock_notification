@@ -1,0 +1,284 @@
+いいね、その要件なら「まずは個人利用MVPをほぼ無料で動かし、のちにSaaS化へ拡張できる設計」にしましょう。
+“メールには固執しない”前提で、ソース（企業PR / X）→ 通知（LINE / Slack / メール）をアダプタ化します。まずはLINEのみで実装、他は差し替え可能に。
+
+全体方針（MVP→SaaS）
+監視対象（ソース・アダプタ）
+
+PR（企業公式サイト / プレスリリース）
+
+優先: RSS/Atom（あるなら最強）
+
+無い場合: HTML更新検知（<article>, <time>, 一覧表の1行目などのセレクタを指定し、最新リンクのURL+日付を抽出）
+
+X（Twitter）
+
+将来: 顧客BYOのX公式APIキー（SaaS化時に導入）
+
+MVP: 顧客が用意する“X→RSSプロキシ”URLを受け付ける形（例：社内で立てたRSS化、RSSHub/Nitter等の自前 or 外部。安定性/規約は顧客責任で）
+
+どうしても用意できない場合はX対応をスキップ（PRのみ通知）→ 後から差し替え
+
+こうしておくと、MVPは無料かつ規約グレーを避け、SaaS化時にBYO APIでクリーンに拡張できます。
+
+通知（シンク・アダプタ）
+
+まずは LINE（Messaging API / 公式アカウント）
+
+個人MVP: 自分のLINE公式アカウント（無料枠あり）でpush送信
+
+後に Slack / メール を追加アダプタとして差し込む（同じイベントを複数シンクへ配信）
+
+通知の重複防止: 各ソースごとに「最新ID（URL+pubDateのハッシュ）」を保存して比較
+
+ランタイム（MVP→SaaS）
+
+MVP（ほぼ無料）:
+
+Google Apps Script（GAS） + 時間主導トリガ（5〜15分間隔）
+
+設定は Googleスプレッドシート 1枚（会社URL / X-ID / X-RSS / LINE userId など）
+
+ストレージは PropertiesService or スプレッドシート（最新IDの保存）
+
+SaaS化:
+
+Cloudflare Workers + Cron Triggers（無料枠大きい）
+
+KV/D1 に設定と最新IDを保存
+
+管理UIは Cloudflare Pages/Workers（テナント・リスト・宛先のCRUD）
+
+通知は LINE Messaging API（顧客の公式アカウント or あなたのマルチテナント運用）／Slack Webhook／メール送信API
+
+データモデル（SaaS視点。MVPでも形は同じ）
+
+targets（監視対象）
+
+tenant_id（顧客）
+
+target_id（UUID）
+
+company_name（任意）
+
+pr_url（企業PRの一覧ページ or RSS）
+
+pr_selector（HTML時のCSSセレクタ：タイトル・リンク・日時）
+
+x_handle（@id）
+
+x_feed_url（顧客BYOのX→RSSプロキシURL：あれば）
+
+enabled（bool）
+
+created_at/updated_at
+
+sinks（通知先）
+
+tenant_id
+
+sink_id（UUID）
+
+type（line | slack | email）
+
+config（{ line_channel_token, line_user_id } / { slack_webhook_url } / { to }）
+
+filters（任意：キーワード含む/除外 等）
+
+state（重複防止）
+
+tenant_id, target_id, source_type(pr|x) → last_seen_id（例: hash(link|pubDate)）・last_seen_at
+
+MVP実装（個人利用・ほぼ無料）
+1) セットアップ
+
+LINE公式アカウントを作成 → Messaging API有効化 → Channel access token と 自分の userId を入手
+
+Googleスプレッドシートに以下列を作る
+tenant_id, company_name, pr_url, pr_selector(optional), x_handle, x_feed_url(optional), line_user_id
+
+GASプロジェクトを作成してスプレッドシートIDを参照。時間主導トリガを5〜15分で設定。
+
+2) GASサンプル（要点のみ・そのまま流用OK）
+
+仕様:
+
+PRは pr_url がRSSならRSSとして処理、HTMLならpr_selectorで抽出。
+
+Xは x_feed_url があるものだけRSSとして処理（なければスキップ）。
+
+新着のみ LINE push。
+
+/*** 設定 ***/
+const SHEET_ID = '<<YOUR_SHEET_ID>>';
+const LINE_CHANNEL_TOKEN = '<<YOUR_LINE_CHANNEL_ACCESS_TOKEN>>';
+
+function main() {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName('targets');
+  const rows = sheet.getDataRange().getValues(); // 1行目ヘッダ想定
+  const header = rows[0];
+  const idx = (name) => header.indexOf(name);
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const tenantId   = row[idx('tenant_id')];
+    const company    = row[idx('company_name')];
+    const prUrl      = row[idx('pr_url')];
+    const prSel      = row[idx('pr_selector')];
+    const xFeedUrl   = row[idx('x_feed_url')];
+    const lineUserId = row[idx('line_user_id')];
+
+    // PRチェック
+    if (prUrl && lineUserId) {
+      const item = fetchLatest(prUrl, prSel); // {id, title, url, date} or null
+      if (item && isNew(tenantId, company, 'pr', item.id)) {
+        pushLine(lineUserId, `[PR] ${company}\n${item.title}\n${item.url}`);
+        saveState(tenantId, company, 'pr', item.id);
+      }
+    }
+    // Xチェック（顧客BYO RSS前提・なければスキップ）
+    if (xFeedUrl && lineUserId) {
+      const item = fetchLatest(xFeedUrl, null);
+      if (item && isNew(tenantId, company, 'x', item.id)) {
+        pushLine(lineUserId, `[X] ${company}\n${item.title || ''}\n${item.url}`);
+        saveState(tenantId, company, 'x', item.id);
+      }
+    }
+  }
+}
+
+/** 最新1件を返す（RSS優先。HTMLはセレクタで1件抽出） */
+function fetchLatest(url, cssSelector) {
+  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
+  const text = res.getContentText();
+
+  // RSS/Atom判定（雑だが十分）
+  if (text.includes('<rss') || text.includes('<feed')) {
+    const doc = XmlService.parse(text);
+    const root = doc.getRootElement();
+    const ns = root.getNamespace();
+    const channel = root.getChild('channel');
+    if (channel) {
+      const item = channel.getChildren('item')[0];
+      if (!item) return null;
+      const link = item.getChildText('link');
+      const title = item.getChildText('title');
+      const pubDate = item.getChildText('pubDate') || item.getChildText('updated') || '';
+      return { id: Utilities.base64Encode(`${link}|${pubDate}`), title, url: link, date: pubDate };
+    } else {
+      // Atom
+      const entries = root.getChildren('entry', ns);
+      if (!entries || !entries.length) return null;
+      const e = entries[0];
+      const linkEl = e.getChildren('link', ns).find(l => (l.getAttribute('rel')?.getValue() || 'alternate') === 'alternate');
+      const link = linkEl?.getAttribute('href')?.getValue() || '';
+      const title = e.getChildText('title', ns);
+      const updated = e.getChildText('updated', ns) || '';
+      return { id: Utilities.base64Encode(`${link}|${updated}`), title, url: link, date: updated };
+    }
+  }
+
+  // HTML抽出（cssSelectorがあれば単純にURLを拾う程度）
+  if (!cssSelector) return null;
+  const urlMatch = text.match(/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/i);
+  if (!urlMatch) return null;
+  const link = absolutize(url, urlMatch[1]);
+  const title = stripTags(urlMatch[2]);
+  return { id: Utilities.base64Encode(`${link}`), title, url: link, date: '' };
+}
+
+function absolutize(base, href) {
+  if (href.startsWith('http')) return href;
+  const u = UrlFetchApp.getRequest(base).url || base;
+  return href.startsWith('/') ? u.replace(/(https?:\/\/[^\/]+).*/, '$1') + href : u.replace(/\/[^\/]*$/, '/') + href;
+}
+function stripTags(s){ return s.replace(/<[^>]*>/g, ''); }
+
+/** 重複防止（Script Propertiesに保存） */
+function isNew(tenant, company, source, id) {
+  const key = `last|${tenant}|${company}|${source}`;
+  const prev = PropertiesService.getScriptProperties().getProperty(key);
+  return prev !== id;
+}
+function saveState(tenant, company, source, id) {
+  const key = `last|${tenant}|${company}|${source}`;
+  PropertiesService.getScriptProperties().setProperty(key, id);
+}
+
+/** LINE push */
+function pushLine(userId, text) {
+  const url = 'https://api.line.me/v2/bot/message/push';
+  const payload = {
+    to: userId,
+    messages: [{ type: 'text', text }],
+  };
+  UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    headers: { Authorization: `Bearer ${LINE_CHANNEL_TOKEN}` },
+    muteHttpExceptions: true,
+  });
+}
+
+
+これでPRは確実、Xは顧客提供のRSSがあるものだけ拾えます。後からSlack/メール送信関数を足すだけで多チャンネル化できます。
+
+SaaS化の道筋
+
+Cloudflare Workers化
+
+Cronで5〜15分間隔実行
+
+KV/D1に targets / sinks / state を保持
+
+「企業リストCSV（①企業URL, Twitter ID）」を1画面で登録 → バックエンドでx_feed_url が空ならXは一旦無効化（PRだけ通知）
+
+通知先のマルチサポート
+
+sink.type = line|slack|email で分岐
+
+LINE: POST /v2/bot/message/push
+
+Slack: Incoming Webhook
+
+メール: 任意の送信API（SendGrid等）※無料枠内で
+
+Xの正式対応
+
+顧客BYOのX API鍵を接続 → あなた側の固定費ゼロ
+
+もしくは「顧客BYOのRSSプロキシURL」を継続サポート（自己責任）
+
+多ソース拡張
+
+adapters: pr_rss, pr_html, x_rss, x_api …（追加容易）
+
+将来はnote, PR TIMES, YouTube Community なども同じ型で拡張
+
+運用
+
+失敗リトライ（指数バックオフ）
+
+レート制限（ソースごとに最短間隔）
+
+ログ/可観測性（Workers Analytics + Slackの障害通知）
+
+コスト感（MVP）
+
+GAS/スプレッドシート/トリガ → ¥0
+
+LINE Messaging API（公式アカウント）→ 無料枠あり（月間メッセージ上限内）
+
+ドメイン不要（MVPはGASのみ）、SaaS段階でドメイン＋Cloudflare（無料枠大）
+
+まずやること（今日できる順）
+
+LINE公式アカウント作成 & Messaging APIのチャネルアクセストークン取得
+
+スプレッドシートにターゲット行を作成（tenant_id, company_name, pr_url, pr_selector, x_feed_url, line_user_id）
+
+上のGASコードを貼り、トリガ設定（5〜15分）
+
+PRから通知が流れるのを確認 → Xは顧客のRSSが揃い次第追加
+
+必要なら、Cloudflare Workers 版（SaaS用）の骨組みコード（Hono + KV/D1スキーマ、アダプタ/シンクのインタフェース、Cron実装）もまとめて出します。まずはこのMVPで回しておくのが最短・最安で、そのままSaaSの設計にも綺麗に乗ります。

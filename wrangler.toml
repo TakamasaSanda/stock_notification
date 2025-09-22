@@ -1,0 +1,50 @@
+name = "stock-notification-worker"
+main = "worker/index.ts"
+compatibility_date = "2024-01-15"
+workers_dev = true
+
+# Cron設定（10分間隔で実行）
+[triggers]
+crons = ["*/10 * * * *"]
+
+# KV名前空間（targets用）
+[[kv_namespaces]]
+binding = "TARGETS"
+id = "your-kv-namespace-id-targets"
+preview_id = "your-preview-kv-namespace-id-targets"
+
+# KV名前空間（state用）
+[[kv_namespaces]]
+binding = "STATE"
+id = "your-kv-namespace-id-state"
+preview_id = "your-preview-kv-namespace-id-state"
+
+# D1データベース（将来のSaaS化用）
+[[d1_databases]]
+binding = "DB"
+database_name = "stock_notification"
+database_id = "your-d1-database-id"
+
+# 環境変数
+[vars]
+LINE_DEFAULT_USER = ""
+
+# 本番環境用の設定
+[env.production]
+name = "stock-notification-worker-prod"
+
+[env.production.triggers]
+crons = ["*/10 * * * *"]
+
+[env.production.kv_namespaces]
+binding = "TARGETS"
+id = "your-prod-kv-namespace-id-targets"
+
+[env.production.kv_namespaces]
+binding = "STATE"
+id = "your-prod-kv-namespace-id-state"
+
+[env.production.d1_databases]
+binding = "DB"
+database_name = "stock_notification_prod"
+database_id = "your-prod-d1-database-id"

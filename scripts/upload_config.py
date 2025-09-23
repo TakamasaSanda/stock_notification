@@ -11,6 +11,8 @@ Usage:
 Requirements:
     - wrangler CLI installed and authenticated
     - config/targets.csv and config/sinks.csv files exist
+    test
+    
 """
 
 import argparse

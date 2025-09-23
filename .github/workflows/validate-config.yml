@@ -1,0 +1,36 @@
+name: Validate Config
+
+on:
+  push:
+    paths:
+      - 'config/**'
+      - 'scripts/upload_config.py'
+      - '.github/workflows/validate-config.yml'
+  pull_request:
+    paths:
+      - 'config/**'
+      - 'scripts/upload_config.py'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (none required)
+        run: |
+          python -V
+          pip -V || true
+          # No external deps; using stdlib only
+
+      - name: Dry-run CSV validation
+        run: |
+          python scripts/upload_config.py --dry-run --skip-wrangler-check
+
+

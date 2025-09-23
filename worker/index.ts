@@ -3,6 +3,8 @@ import { fetchPR } from './adapters/pr_rss';
 import { fetchX } from './adapters/x_rss';
 import { isNew, setSeen } from './lib/dedupe';
 import { pushLine } from './sinks/line';
+import { listSinks } from './lib/sinks';
+import { postToDiscord } from './sinks/discord';
 
 export interface Env {
   TARGETS: KVNamespace;
@@ -18,6 +20,15 @@ export default {
     
     try {
       const targets = await listTargets(env.TARGETS);
+      const sinks = await listSinks(env.TARGETS);
+      const discordByTenant = new Map<string, string[]>();
+      for (const s of sinks) {
+        if (s.type === 'discord' && s.enabled && s.tenant_id) {
+          const urls = (s.config?.webhook_urls as string[]) || [];
+          if (!discordByTenant.has(s.tenant_id)) discordByTenant.set(s.tenant_id, []);
+          discordByTenant.set(s.tenant_id, [...discordByTenant.get(s.tenant_id)!, ...urls]);
+        }
+      }
       console.log(`Found ${targets.length} targets`);
       
       for (const target of targets.filter(t => t.enabled)) {
@@ -29,7 +40,13 @@ export default {
             const item = await fetchPR(target.pr_url, env);
             if (item && await isNew(env.STATE, target, 'pr', item.id)) {
               const message = `[PR] ${target.company_name}\n${item.title}\n${item.url}`;
-              await pushLine(env, target.line_user_id, message);
+              if (target.line_user_id) {
+                await pushLine(env, target.line_user_id, message);
+              }
+              const discordUrls = discordByTenant.get(target.tenant_id) || [];
+              if (discordUrls.length) {
+                await postToDiscord(message, discordUrls);
+              }
               await setSeen(env.STATE, target, 'pr', item.id);
               console.log(`Sent PR notification for ${target.company_name}`);
             }
@@ -44,7 +61,13 @@ export default {
             const item = await fetchX(target.x_feed_url, env);
             if (item && await isNew(env.STATE, target, 'x', item.id)) {
               const message = `[X] ${target.company_name}\n${item.title || ''}\n${item.url}`;
-              await pushLine(env, target.line_user_id, message);
+              if (target.line_user_id) {
+                await pushLine(env, target.line_user_id, message);
+              }
+              const discordUrls = discordByTenant.get(target.tenant_id) || [];
+              if (discordUrls.length) {
+                await postToDiscord(message, discordUrls);
+              }
               await setSeen(env.STATE, target, 'x', item.id);
               console.log(`Sent X notification for ${target.company_name}`);
             }

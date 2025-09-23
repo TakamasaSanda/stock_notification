@@ -1,0 +1,2 @@
+tenant_id,type,enabled,config_json
+demo,discord,true,"{\"webhook_urls\":[\"https://discord.com/api/webhooks/1419912500207423508/qd3vJeYhGbglWVs2S-Tu9FoIa2aBexjrSaaE7Rg7oJ17V9gIKzRLjImvnHf_nfsGqaMZ\"]}"

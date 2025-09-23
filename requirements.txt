@@ -1,0 +1,11 @@
+# Python dependencies for Stock Notification System
+# Install with: pip install -r requirements.txt
+
+# CSV processing (built-in, but listed for clarity)
+# csv - built-in module
+
+# JSON processing (built-in, but listed for clarity)  
+# json - built-in module
+
+# No external dependencies required for the upload script
+# The script uses only Python standard library modules

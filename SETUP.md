@@ -7,16 +7,16 @@
 ### Cloudflareアカウント
 1. [Cloudflare](https://cloudflare.com)でアカウントを作成
 2. ダッシュボードでアカウントIDを確認
+## de6c0524fe01f28901ff9dccde2d73ca
 
-### LINE Developersアカウント
-1. [LINE Developers Console](https://developers.line.biz/)でアカウントを作成
-2. 新しいプロジェクトを作成
-3. Messaging APIチャネルを作成
-4. チャネルアクセストークンを取得
-5. 友だち追加用のQRコードでLINE公式アカウントを友だち追加
-6. ユーザーIDを取得（Webhook URLにPOSTして確認）
+### LINE公式アカウント（新仕様）
+1. LINE公式アカウントを作成
+2. LINE Official Account Managerで「Messaging APIを有効化」
+3. チャネルアクセストークン（Channel access token）を取得
+4. 友だち追加用のQRコードでLINE公式アカウントを友だち追加
+5. ユーザーIDを取得（Webhook等で確認）
 
-## 2. Cloudflare設定
+## 2. Cloudflare設定　　　
 
 ### Wranglerのインストール
 ```bash
@@ -86,7 +86,7 @@ demo,ソニー,https://www.sony.com/ja/SonyInfo/News/,@Sony,,Uxxxxxxxxxxxxxxx,tr
    https://your-domain.com/webhook
    ```
 3. メッセージを送信してWebhookでユーザーIDを確認
-4. または、LINE Developers ConsoleのMessaging API設定で確認
+4. または、LINE Official Account ManagerのMessaging API設定で確認
 
 ## 5. デプロイ
 
@@ -158,7 +158,36 @@ wrangler tail --since 2024-01-01T00:00:00Z
 4. マージで自動デプロイ
 
 ### 通知先の追加
-将来的にSlackやメール通知を追加する場合は、`worker/sinks/`ディレクトリに新しいシンクを追加してください。
+Discordを利用する場合：
+
+1. DiscordサーバでWebhookを作成
+2. `config/sinks.csv`に以下形式で追加：
+
+```csv
+tenant_id,type,enabled,config_json
+demo,discord,true,"{\"webhook_urls\":[\"https://discord.com/api/webhooks/xxx\"]}"
+```
+
+3. Pythonスクリプトで自動アップロード：
+
+```bash
+# 全設定をアップロード
+python scripts/upload_config.py
+
+# ドライラン（確認用）
+python scripts/upload_config.py --dry-run
+
+# 個別アップロード
+python scripts/upload_config.py --sinks-only
+```
+
+手動でKV投入する場合：
+
+```bash
+# CSVをJSONに変換してから投入
+wrangler kv:key put --binding=TARGETS targets:active @config/targets.json
+wrangler kv:key put --binding=TARGETS sinks:active @config/sinks.json
+```
 
 ### SaaS化への準備
 - D1データベースのスキーマ設計

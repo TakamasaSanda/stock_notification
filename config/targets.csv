@@ -1,6 +1,3 @@
 tenant_id,company_name,pr_url,twitter_id,x_feed_url,line_user_id,enabled
-demo,トヨタ,https://global.toyota/jp/newsroom/rss.xml,@Toyota_PR,,Uxxxxxxxxxxxxxxx,true
-demo,ソニー,https://www.sony.com/ja/SonyInfo/News/,@Sony,,Uxxxxxxxxxxxxxxx,true
-demo,パナソニック,https://news.panasonic.com/jp/rss.xml,@PanasonicJP,,Uxxxxxxxxxxxxxxx,true
-demo,日立製作所,https://www.hitachi.co.jp/New/cnews/rss.xml,@Hitachi_Japan,,Uxxxxxxxxxxxxxxx,true
-demo,三菱電機,https://www.mitsubishielectric.co.jp/news/rss.xml,@MitsubishiElec,,Uxxxxxxxxxxxxxxx,true
+demo,Reviva Pharmaceuticals,https://revivapharma.com/press-releases/,, ,san_1030_san,true
+demo,Plus TherapeuticsInc,https://ir.plustherapeutics.com/press-releases,@plustxinc,,san_1030_san,true

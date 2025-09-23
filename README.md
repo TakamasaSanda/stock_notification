@@ -1,6 +1,6 @@
 # Stock Notification System
 
-企業のPRやX（Twitter）の更新を監視し、LINEに通知するシステムです。
+企業のPRやX（Twitter）の更新を監視し、LINE/Discordに通知するシステムです。
 Cloudflare Workersを使用してSaaS化を見据えた設計になっています。
 
 ## 機能
@@ -20,7 +20,7 @@ Cloudflare Workers (Cron 5-15分間隔)
     ↓ (監視)
 企業PR RSS / X RSS
     ↓ (通知)
-LINE Messaging API
+LINE Messaging API / Discord Webhooks
 ```
 
 ## セットアップ手順
@@ -55,11 +55,11 @@ wrangler d1 create stock_notification
 
 作成したKV名前空間とD1データベースのIDを`wrangler.toml`に設定してください。
 
-### 3. LINE設定
+### 3. LINE設定（新仕様）
 
-1. [LINE Developers Console](https://developers.line.biz/)でプロジェクトを作成
-2. Messaging APIチャネルを作成
-3. チャネルアクセストークンを取得
+1. LINE公式アカウントを作成
+2. LINE Official Account Managerで「Messaging APIを有効化」
+3. チャネルアクセストークン（Channel access token）を取得
 4. 友だち追加用のQRコードでLINE公式アカウントを友だち追加
 5. ユーザーIDを取得
 
@@ -71,6 +71,18 @@ wrangler d1 create stock_notification
 - `CLOUDFLARE_ACCOUNT_ID`: CloudflareアカウントID
 - `LINE_CHANNEL_TOKEN`: LINE Messaging APIのチャネルアクセストークン
 
+### 4. Discord設定（任意・複数宛先可）
+
+1. DiscordサーバでWebhookを作成（チャンネルごと）
+2. `config/sinks.csv`に以下の形式で登録
+
+```csv
+tenant_id,type,enabled,config_json
+demo,discord,true,"{\"webhook_urls\":[\"https://discord.com/api/webhooks/xxx\"]}"
+```
+
+3. 上記CSVをKVに反映（例: CIで`wrangler kv:key put --binding=TARGETS sinks:active @config/sinks.json`）
+
 ### 5. 監視対象の設定
 
 `config/targets.csv`を編集して監視対象企業を設定してください：
@@ -80,7 +92,23 @@ tenant_id,company_name,pr_url,twitter_id,x_feed_url,line_user_id,enabled
 demo,トヨタ,https://global.toyota/jp/newsroom/rss.xml,@Toyota_PR,,Uxxxxxxxxxxxxxxx,true
 ```
 
-### 6. デプロイ
+### 6. 設定のアップロード
+
+CSVファイルをCloudflare KVにアップロード：
+
+```bash
+# PythonスクリプトでCSV→JSON変換＋KVアップロード
+python scripts/upload_config.py
+
+# ドライラン（実際にはアップロードしない）
+python scripts/upload_config.py --dry-run
+
+# 個別アップロード
+python scripts/upload_config.py --targets-only
+python scripts/upload_config.py --sinks-only
+```
+
+### 7. デプロイ
 
 ```bash
 # 依存関係のインストール
